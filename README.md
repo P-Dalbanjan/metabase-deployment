@@ -6,83 +6,54 @@ The deployment is designed to query a business database (Odoo read replica) resi
 
 ---
 
-## 🏗️ Architecture Overview
+# 🏗 Architecture Overview
+
+The architecture is designed for fault tolerance, scalability, and strict security using AWS best practices. It spans two Availability Zones (AZs) to ensure high availability.
 
 ![Architecture Overview](assets/architecture-diagram.png)
 
-The architecture is built for high availability (HA) across two Availability Zones (AZs) and follows strict security best practices, including isolated private subnets, IAM role-based access, and least-privilege security groups.
+### Key Components
 
-### Networking & Routing
-* **VPC:** Custom VPC spanning two Availability Zones.
-* **Subnets:** Public subnets for load balancing and NAT gateways; Private subnets for compute (EC2) and database (RDS) resources.
-* **Application Load Balancer (ALB):** Deployed in the public subnets to distribute incoming HTTPS traffic across the EC2 target group.
-* **NAT Gateways:** Deployed in public subnets to allow outbound internet access for instances in private subnets (e.g., for package updates or Metabase integrations).
-* **VPC Peering:** Establishes a secure connection to a separate VPC to query the Odoo database read replica.
-* **DNS (Route 53):** * **Public:** Routes the main domain to the ALB.
-  * **Private Hosted Zone:** Resolves `db.metabase.internal` to the backend RDS endpoint for seamless database connection management.
-* **SSL/TLS:** AWS Certificate Manager (ACM) provisions certificates for the ALB to secure transit.
+* **Networking:** A custom Virtual Private Cloud (VPC) partitioned into Public and Private subnets across two AZs. 
+* **Routing & Ingress:** Amazon Route 53 handles DNS, routing external HTTPS traffic to an Application Load Balancer (ALB). SSL/TLS certificates are managed by AWS Certificate Manager (ACM).
+* **Compute:** Metabase runs on Amazon EC2 instances managed by an Auto Scaling Group (ASG) located strictly within private subnets.
+* **Primary Database:** Amazon RDS (PostgreSQL/MySQL) configured for a Multi-AZ deployment ensures data redundancy and failover capabilities.
+* **External Data Source (Odoo):** A VPC Peering connection links the Metabase VPC to an external "Odoo VPC," allowing Metabase EC2 instances to securely query an Odoo Read Replica.
+* **Security & Management:**
+    * **AWS Systems Manager (SSM):** Provides secure, agent-based instance access without requiring bastion hosts or open inbound SSH ports.
+    * **AWS Secrets Manager:** Securely stores and rotates database credentials.
+    * **IAM Roles:** EC2 instances assume IAM roles scoped with least-privilege permissions.
+    * **Security Groups:** Strictly control inbound and outbound traffic at the instance and load balancer levels.
+* **Backups:** Automated RDS snapshots and backups are stored in Amazon S3.
 
-### Compute
-* **Auto Scaling Group (ASG):** Manages the Metabase EC2 instances across two private subnets for high availability and self-healing. Integrated with ALB health checks.
-* **Target Group:** Contains 2 EC2 instances running the Metabase application.
+## 🚦 Traffic Flow
 
-### Database & Storage
-* **Metabase Application Database:** Amazon RDS deployed in a Multi-AZ configuration for automatic failover. Located in private subnets.
-* **Backups:** Automated daily RDS snapshots stored securely in an Amazon S3 bucket.
-* **Business Data Source:** Metabase connects exclusively to a **read replica** of an Odoo database located in the peered VPC, ensuring analytical queries do not impact production Odoo performance.
+1.  **User Access:** Users navigate to the Metabase URL. Route 53 resolves the domain to the ALB.
+2.  **Load Balancing:** The ALB terminates the SSL/TLS connection and forwards the traffic to the Target Group containing the active Metabase EC2 instances.
+3.  **Application Tier:** The EC2 instances process the requests. 
+    * *Internal Data:* Metabase queries its own configuration data from the Multi-AZ RDS instance.
+    * *Analytics Data:* For reporting, Metabase routes queries through the VPC Peering connection to the Odoo Read Replica database.
+4.  **Outbound Internet:** EC2 instances access the internet (for updates or external API calls) via NAT Gateways located in the public subnets.
 
-### Security & Access
-* **AWS Systems Manager (SSM):** Used for secure shell access to private EC2 instances without requiring bastion hosts or open inbound SSH ports.
-* **IAM Roles:** EC2 instances are assigned IAM roles granting them precise permissions to access RDS, AWS Secrets Manager (for database credentials), and SSM.
-* **Security Groups:** Configured with the principle of least privilege. For example, the RDS security group only allows ingress from the EC2 security group.
-* **Secrets Management:** AWS Secrets Manager securely stores and rotates database credentials.
+## 📋 Prerequisites
 
----
+Before deploying this architecture, ensure you have:
+* An active AWS Account with appropriate administrative permissions.
+* A registered domain name managed by Route 53 (or pointing to Route 53 nameservers).
+* An existing Odoo VPC with a configured Read Replica, ready to accept a VPC Peering request.
 
-## 🛠️ Tech Stack
+## 🔒 Security Posture
 
-* **Infrastructure as Code:** Terraform
-* **Configuration Management:** Ansible
-* **Application:** Metabase
-* **Cloud Provider:** Amazon Web Services (AWS)
+* **Private Compute:** No EC2 instances or RDS databases have public IP addresses.
+* **Encryption:** Traffic is encrypted in transit via ACM on the ALB. Data at rest is encrypted via AWS KMS for RDS and S3.
+* **Access Control:** All infrastructure access is handled via AWS SSM; no SSH keys are distributed.
 
----
+## 🚀 Deployment
 
-## 🚀 Deployment Process
+*(Note: Add your specific deployment instructions here, such as Terraform commands, CloudFormation stack details, or AWS CDK deployment steps.)*
 
-### Prerequisites
-* Terraform installed locally (`>= 1.0.0`)
-* Ansible installed locally
-* AWS CLI configured with appropriate credentials
-* Existing Odoo VPC and Read Replica (for peering setup)
-* Domain name registered or hosted in Route 53
-
-### 1. Infrastructure Provisioning (Terraform)
-Navigate to the Terraform directory and initialize the environment:
-
-```bash
-cd terraform
-terraform init
-terraform plan
-terraform apply
-```
-*Terraform will output the ALB DNS name, private IPs (if needed), and other resource identifiers.*
-
-### 2. Configuration Management (Ansible)
-Once the infrastructure is up, use SSM as the connection plugin to configure the private instances:
-
-```bash
-cd ansible
-ansible-playbook -i inventory.aws_ec2.yml setup_metabase.yml
-```
-*Ensure your Ansible configuration is set up to use the `aws_ssm` connection plugin to reach the instances securely.*
-
----
-
-## 🔒 Security Best Practices Implemented
-
-1. **No Public IP Addresses for Compute/Data:** All EC2 and RDS instances reside in private subnets.
-2. **No Bastion Hosts:** Leveraging AWS SSM Session Manager for terminal access eliminates the need for exposed SSH ports.
-3. **Role-Based Access:** Applications authenticate to AWS services via instance profiles/IAM roles, never via hardcoded access keys.
-4. **Encrypted Transit:** End-to-end encryption using ACM certificates on the ALB.
-5. **Read-Only Analytics:** Metabase only queries the Odoo read replica to prevent accidental writes or performance degradation on the primary business database.
+1.  **Network Provisioning:** Deploy the VPC, Subnets, Internet Gateway, and NAT Gateways.
+2.  **VPC Peering:** Establish and accept the VPC peering connection with the Odoo VPC. Update route tables in both VPCs.
+3.  **Database Provisioning:** Deploy the Multi-AZ RDS instance and store credentials in Secrets Manager.
+4.  **Compute Provisioning:** Create the ALB, Target Group, ASG, and Launch Template for the EC2 instances. Ensure the Metabase user data script automatically fetches database credentials on boot.
+5.  **DNS & SSL:** Request the ACM certificate and map the Route 53 alias record to the ALB.
