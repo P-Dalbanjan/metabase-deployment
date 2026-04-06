@@ -1,8 +1,6 @@
-# Metabase High Availability AWS Deployment
+# High-Availability Metabase Deployment on AWS
 
-This repository contains the Infrastructure as Code (IaC) and configuration management scripts for a highly available, secure, and self-healing deployment of Metabase on AWS. The infrastructure is primarily provisioned using Terraform, with instance configuration managed by Ansible. 
-
-The deployment is designed to query a business database (Odoo read replica) residing in a separate VPC via VPC Peering.
+This repository documents the architecture and infrastructure configuration for a highly available, secure, and production-ready deployment of Metabase on Amazon Web Services (AWS). It also includes the networking configuration for querying an external Odoo database via VPC peering.
 
 ---
 
