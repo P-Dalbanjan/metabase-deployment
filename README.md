@@ -50,8 +50,6 @@ Before deploying this architecture, ensure you have:
 
 ## 🚀 Deployment
 
-*(Note: Add your specific deployment instructions here, such as Terraform commands, CloudFormation stack details, or AWS CDK deployment steps.)*
-
 1.  **Network Provisioning:** Deploy the VPC, Subnets, Internet Gateway, and NAT Gateways.
 2.  **VPC Peering:** Establish and accept the VPC peering connection with the Odoo VPC. Update route tables in both VPCs.
 3.  **Database Provisioning:** Deploy the Multi-AZ RDS instance and store credentials in Secrets Manager.
